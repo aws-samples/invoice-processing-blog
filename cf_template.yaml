@@ -1,0 +1,418 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create basic notebook instance"
+
+Resources:
+
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+
+  BasicNotebookInstance:
+    Type: "AWS::SageMaker::NotebookInstance"
+    Properties:
+      InstanceType: "ml.t2.large"
+      RoleArn: !GetAtt SagemakerExecutionRole.Arn
+      DefaultCodeRepository: https://github.com/awsdenis/invoice-processing
+      NotebookInstanceName: !Sub "${AWS::StackName}-notebook"
+      Tags:
+        - Key: Project
+          Value: "Hotel invoice recognition"
+
+  ComprehendRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "comprehend.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Tags:
+        - Key: Project
+          Value: "Hotel invoice recognition"
+
+  ComprehendS3Policy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: S3Policy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${S3Bucket}"
+              - !Sub "arn:aws:s3:::${S3Bucket}/*"
+      Roles:
+        - !Ref ComprehendRole
+
+  SagemakerExecutionRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Principal:
+                Service:
+                  - "sagemaker.amazonaws.com"
+              Action:
+                - "sts:AssumeRole"
+        Path: "/"
+        ManagedPolicyArns:
+          - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSageMakerFullAccess"
+        Tags:
+          - Key: Project
+            Value: "Hotel invoice recognition"
+
+  SagemakerS3Policy:
+      Type: "AWS::IAM::Policy"
+      Properties:
+        PolicyName: S3Policy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "s3:*"
+              Resource:
+                - !Sub "arn:aws:s3:::${S3Bucket}"
+                - !Sub "arn:aws:s3:::${S3Bucket}/*"
+        Roles:
+          - !Ref SagemakerExecutionRole
+
+  SagemakerTextractPolicy:
+      Type: AWS::IAM::Policy
+      Properties:
+        PolicyName: "TextractPolicy"
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "textract:StartDocumentTextDetection"
+                - "textract:GetDocumentTextDetection"
+              Resource: "*"
+        Roles:
+          - !Ref SagemakerExecutionRole
+
+  SagemakerComprehendPolicy:
+      Type: AWS::IAM::Policy
+      Properties:
+        PolicyName: "ComprehendPolicy"
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "comprehend:DescribeEntityRecognizer"
+                - "comprehend:CreateEntityRecognizer"
+                - "comprehend:DeleteEntityRecognizer"
+              Resource: !Sub "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entity-recognizer/invoice-recognizer*"
+            - Effect: Allow
+              Action:
+                - "comprehend:StartEntitiesDetectionJob"
+              Resource:
+                - !Sub "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entity-recognizer/invoice-recognizer*"
+                - !Sub "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entities-detection-job/*"
+            - Effect: Allow
+              Action:
+                - "comprehend:DescribeEntitiesDetectionJob"
+              Resource: !Sub "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entities-detection-job/*"
+            - Effect: Allow
+              Action:
+                - "comprehend:CreateEndpoint"
+                - "comprehend:TagResource"
+                - "comprehend:DescribeEndpoint"
+                - "comprehend:DeleteEndpoint"
+              Resource:
+                - !Sub "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entity-recognizer/invoice-recognizer*"
+                - !Sub "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entity-recognizer-endpoint/invoice-detect-endpoint"
+
+        Roles:
+          - !Ref SagemakerExecutionRole
+
+  SagemakerIAMPolicy:
+      Type: "AWS::IAM::Policy"
+      Properties:
+        PolicyName: IAMPolicy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "iam:PassRole"
+              Resource:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:role/${ComprehendRole}"
+        Roles:
+          - !Ref SagemakerExecutionRole
+
+  SagemakerCloudformationPolicy:
+        Type: "AWS::IAM::Policy"
+        Properties:
+          PolicyName: CloudformationPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "cloudformation:DescribeStacks"
+                Resource:
+                  -  !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
+          Roles:
+            - !Ref SagemakerExecutionRole
+
+  LambdaRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Principal:
+                Service:
+                  - "lambda.amazonaws.com"
+              Action:
+                - "sts:AssumeRole"
+        Path: "/"
+        Tags:
+          - Key: Project
+            Value: "Hotel invoice recognition"
+
+  LambdaS3Policy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: S3Policy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${S3Bucket}"
+              - !Sub "arn:aws:s3:::${S3Bucket}/*"
+      Roles:
+        - !Ref LambdaRole
+
+  LambdaDynamoDBPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: DynamoDBPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "dynamodb:PutItem"
+            Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-output"
+      Roles:
+        - !Ref LambdaRole
+
+  LambdaCloudWatchPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: CloudWatchPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource: '*'
+      Roles:
+        - !Ref LambdaRole
+
+  LambdaTextractPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "TextractPolicy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "textract:StartDocumentTextDetection"
+              - "textract:GetDocumentTextDetection"
+            Resource: "*"
+      Roles:
+        - !Ref LambdaRole
+
+  LambdaComprehendPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "ComprehendPolicy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "comprehend:DetectEntities"
+            Resource: !Sub "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entity-recognizer-endpoint/*"
+
+      Roles:
+        - !Ref LambdaRole
+
+  DynamoDBTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "invoice_s3_path"
+          AttributeType: S
+      KeySchema:
+        - AttributeName: "invoice_s3_path"
+          KeyType: "HASH"
+      TableName: !Sub "${AWS::StackName}-output"
+      Tags:
+        - Key: Project
+          Value: "Hotel invoice recognition"
+
+  RecognizeInvoiceFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-function"
+      Handler: index.lambda_handler
+      Runtime: python3.9
+      Role: !GetAtt LambdaRole.Arn
+      ReservedConcurrentExecutions: 100
+      Timeout: 900
+      Environment:
+        Variables:
+          ComprehendModelEndpointArn: !Sub "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entity-recognizer-endpoint/invoice-detect-endpoint"
+          DynamoDBTableName: !Sub "${AWS::StackName}-output"
+      Tags:
+        - Key: Project
+          Value: "Hotel invoice recognition"
+      Code:
+        ZipFile: |
+          
+          import json
+          import os
+          import boto3
+          from boto3.dynamodb.conditions import Key
+          from urllib.parse import unquote_plus
+          from botocore.config import Config
+          
+          def lambda_handler(event, context):
+              
+              # Set retry mode
+              config = Config(
+                  retries = {
+                      'max_attempts': 5,
+                      'mode': 'standard'                   
+                  }
+              )
+          
+              comprehend_client = boto3.client('comprehend', config=config)
+              textract_client = boto3.client('textract', config=config)
+              dynamodb = boto3.resource('dynamodb').Table(os.environ['DynamoDBTableName'])
+          
+              
+              try:
+              
+                  # Identify new objects
+                  for record in event['Records']:
+              
+                      s3_bucket = record['s3']['bucket']['name']
+                      s3_object = unquote_plus(record['s3']['object']['key'])
+                      
+                      # Start hotel invoice text detection
+                      response = textract_client.start_document_text_detection(
+                          DocumentLocation={
+                          'S3Object': {
+                                  'Bucket': s3_bucket,
+                                  'Name': s3_object
+                              }
+                          }
+                      )
+                      
+                      # Get JobId for text detection process
+                      jobId = response['JobId']
+              
+                      # Wait will text detection process completed
+                      status = context =  ''
+          
+                      while True:
+                  
+                          response = textract_client.get_document_text_detection(JobId=jobId)
+                          status = response["JobStatus"]
+           
+                          if status != "IN_PROGRESS":
+                              break
+                  
+                      if status == 'SUCCEEDED':
+                      
+                          for item in response["Blocks"]:
+                              if item["BlockType"] == "LINE":
+                                  context += item["Text"]+' '
+                              
+                          response = comprehend_client.detect_entities(
+                              Text=context,
+                              LanguageCode="en",
+                              EndpointArn=os.environ['ComprehendModelEndpointArn']
+                          )
+          
+                          item = {
+                              'invoice_s3_path': 's3://{}/{}'.format(s3_bucket, s3_object),
+                              'detect_entity' :  json.dumps(response['Entities'][0])  if len(response['Entities']) != 0 else '',
+                              'status': 'Detected' if len(response['Entities']) != 0 else 'Not detected'
+                          }
+          
+                          dynamodb.put_item(Item=item)
+                   
+              except Exception as err:
+          
+                  print('ERROR: {}'.format(str(err)))
+          
+                  return {
+                      "statusCode": 500,
+                      "body": json.dumps({
+                          "message": str(err)
+                      }),
+                  }
+                  
+              
+              return {
+                  "statusCode": 200,
+                  "body": json.dumps({
+                      "message": "SUCCESS"
+                  }),
+              }
+
+
+
+
+
+
+  S3InvokeLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref RecognizeInvoiceFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::${S3Bucket}"
+      SourceAccount: !Ref "AWS::AccountId"
+
+Outputs:
+
+    BasicNotebookInstanceId:
+      Value: !Ref BasicNotebookInstance
+
+    S3BucketName:
+      Description: S3 bucket name
+      Value: !Ref S3Bucket
+
+    ComprehendRoleArn:
+      Description: Comprehend role Arn
+      Value: !GetAtt ComprehendRole.Arn
+
+    LambdaFunctionArn:
+      Description: Lambda function Arn
+      Value: !GetAtt RecognizeInvoiceFunction.Arn
