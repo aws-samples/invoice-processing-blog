@@ -11,7 +11,7 @@ Resources:
     Properties:
       InstanceType: "ml.t2.large"
       RoleArn: !GetAtt SagemakerExecutionRole.Arn
-      DefaultCodeRepository: https://github.com/awsdenis/invoice-processing
+      DefaultCodeRepository: https://github.com/aws-samples/invoice-processing-blog
       NotebookInstanceName: !Sub "${AWS::StackName}-notebook"
       Tags:
         - Key: Project
