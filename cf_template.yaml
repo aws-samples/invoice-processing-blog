@@ -94,8 +94,7 @@ Resources:
           Statement:
             - Effect: Allow
               Action:
-                - "textract:StartDocumentTextDetection"
-                - "textract:GetDocumentTextDetection"
+                - "textract:DetectDocumentText"
               Resource: "*"
         Roles:
           - !Ref SagemakerExecutionRole
@@ -238,8 +237,7 @@ Resources:
         Statement:
           - Effect: Allow
             Action:
-              - "textract:StartDocumentTextDetection"
-              - "textract:GetDocumentTextDetection"
+              - "textract:DetectDocumentText"
             Resource: "*"
       Roles:
         - !Ref LambdaRole
@@ -313,8 +311,7 @@ Resources:
               comprehend_client = boto3.client('comprehend', config=config)
               textract_client = boto3.client('textract', config=config)
               dynamodb = boto3.resource('dynamodb').Table(os.environ['DynamoDBTableName'])
-          
-              
+            
               try:
               
                   # Identify new objects
@@ -324,8 +321,8 @@ Resources:
                       s3_object = unquote_plus(record['s3']['object']['key'])
                       
                       # Start hotel invoice text detection
-                      response = textract_client.start_document_text_detection(
-                          DocumentLocation={
+                      response = textract_client.detect_document_text(
+                          Document={
                           'S3Object': {
                                   'Bucket': s3_bucket,
                                   'Name': s3_object
@@ -333,39 +330,23 @@ Resources:
                           }
                       )
                       
-                      # Get JobId for text detection process
-                      jobId = response['JobId']
-              
-                      # Wait will text detection process completed
-                      status = context =  ''
-          
-                      while True:
-                  
-                          response = textract_client.get_document_text_detection(JobId=jobId)
-                          status = response["JobStatus"]
-           
-                          if status != "IN_PROGRESS":
-                              break
-                  
-                      if status == 'SUCCEEDED':
-                      
-                          for item in response["Blocks"]:
-                              if item["BlockType"] == "LINE":
-                                  context += item["Text"]+' '
+                      for item in response["Blocks"]:
+                          if item["BlockType"] == "LINE":
+                              context += item["Text"]+' '
                               
-                          response = comprehend_client.detect_entities(
-                              Text=context,
-                              LanguageCode="en",
-                              EndpointArn=os.environ['ComprehendModelEndpointArn']
-                          )
+                      response = comprehend_client.detect_entities(
+                            Text=context,
+                            LanguageCode="en",
+                            EndpointArn=os.environ['ComprehendModelEndpointArn']
+                      )
           
-                          item = {
-                              'invoice_s3_path': 's3://{}/{}'.format(s3_bucket, s3_object),
-                              'detect_entity' :  json.dumps(response['Entities'][0])  if len(response['Entities']) != 0 else '',
-                              'status': 'Detected' if len(response['Entities']) != 0 else 'Not detected'
-                          }
+                      item = {
+                          'invoice_s3_path': 's3://{}/{}'.format(s3_bucket, s3_object),
+                          'detect_entity' :  json.dumps(response['Entities'][0])  if len(response['Entities']) != 0 else '',
+                          'status': 'Detected' if len(response['Entities']) != 0 else 'Not detected'
+                      }
           
-                          dynamodb.put_item(Item=item)
+                      dynamodb.put_item(Item=item)
                    
               except Exception as err:
           
@@ -378,18 +359,12 @@ Resources:
                       }),
                   }
                   
-              
               return {
                   "statusCode": 200,
                   "body": json.dumps({
                       "message": "SUCCESS"
                   }),
               }
-
-
-
-
-
 
   S3InvokeLambdaPermission:
     Type: "AWS::Lambda::Permission"
