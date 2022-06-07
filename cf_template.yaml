@@ -330,6 +330,7 @@ Resources:
                           }
                       )
                       
+                      context = ''
                       for item in response["Blocks"]:
                           if item["BlockType"] == "LINE":
                               context += item["Text"]+' '
