@@ -5,6 +5,30 @@ Resources:
 
   S3Bucket:
     Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  CMK:
+    Type: 'AWS::KMS::Key'
+    Properties:
+      Description: Symmetric encryption KMS key
+      EnableKeyRotation: true
+      PendingWindowInDays: 20
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+      Tags:
+        - Key: Project
+          Value: "Hotel invoice recognition"
 
   BasicNotebookInstance:
     Type: "AWS::SageMaker::NotebookInstance"
@@ -13,6 +37,7 @@ Resources:
       RoleArn: !GetAtt SagemakerExecutionRole.Arn
       DefaultCodeRepository: https://github.com/aws-samples/invoice-processing-blog
       NotebookInstanceName: !Sub "${AWS::StackName}-notebook"
+      KmsKeyId: !GetAtt CMK.KeyId
       Tags:
         - Key: Project
           Value: "Hotel invoice recognition"
@@ -43,7 +68,9 @@ Resources:
         Statement:
           - Effect: Allow
             Action:
-              - "s3:*"
+              - "s3:ListBucket"
+              - "s3:GetObject"
+              - "s3:PutObject"
             Resource:
               - !Sub "arn:aws:s3:::${S3Bucket}"
               - !Sub "arn:aws:s3:::${S3Bucket}/*"
@@ -78,7 +105,9 @@ Resources:
           Statement:
             - Effect: Allow
               Action:
-                - "s3:*"
+                - "s3:GetObject"
+                - "s3:PutObject"
+                - "s3:PutBucketNotification"
               Resource:
                 - !Sub "arn:aws:s3:::${S3Bucket}"
                 - !Sub "arn:aws:s3:::${S3Bucket}/*"
@@ -178,6 +207,8 @@ Resources:
               Action:
                 - "sts:AssumeRole"
         Path: "/"
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         Tags:
           - Key: Project
             Value: "Hotel invoice recognition"
@@ -191,10 +222,25 @@ Resources:
         Statement:
           - Effect: Allow
             Action:
-              - "s3:*"
+              - "s3:GetObject"
+              - "s3:PutObject"
             Resource:
-              - !Sub "arn:aws:s3:::${S3Bucket}"
               - !Sub "arn:aws:s3:::${S3Bucket}/*"
+      Roles:
+        - !Ref LambdaRole
+
+  LambdaKMSPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: KMSPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "kms:Decrypt"
+            Resource:
+              - !GetAtt CMK.Arn
       Roles:
         - !Ref LambdaRole
 
@@ -209,22 +255,6 @@ Resources:
             Action:
               - "dynamodb:PutItem"
             Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-output"
-      Roles:
-        - !Ref LambdaRole
-
-  LambdaCloudWatchPolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: CloudWatchPolicy
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: "Allow"
-            Action:
-              - "logs:CreateLogGroup"
-              - "logs:CreateLogStream"
-              - "logs:PutLogEvents"
-            Resource: '*'
       Roles:
         - !Ref LambdaRole
 
@@ -261,6 +291,8 @@ Resources:
     Type: "AWS::DynamoDB::Table"
     Properties:
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: "invoice_s3_path"
           AttributeType: S
@@ -268,6 +300,10 @@ Resources:
         - AttributeName: "invoice_s3_path"
           KeyType: "HASH"
       TableName: !Sub "${AWS::StackName}-output"
+      SSESpecification:
+        KMSMasterKeyId: !GetAtt CMK.KeyId
+        SSEEnabled: true
+        SSEType: "KMS"
       Tags:
         - Key: Project
           Value: "Hotel invoice recognition"
