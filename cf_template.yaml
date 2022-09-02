@@ -379,7 +379,7 @@ Resources:
           
                       item = {
                           'invoice_s3_path': 's3://{}/{}'.format(s3_bucket, s3_object),
-                          'detect_entity' :  json.dumps(response['Entities'][0])  if len(response['Entities']) != 0 else '',
+                          'detect_entity' :  json.dumps(response['Entities'])  if len(response['Entities']) != 0 else '',
                           'status': 'Detected' if len(response['Entities']) != 0 else 'Not detected'
                       }
           
